@@ -1,6 +1,5 @@
 from .SDWAAPHDUnit import SDWAAPHDUnit
 from .StateSpaceModel import StateSpaceModel
-from .CVM import CVM
 from .GaussianMixture import GaussianMixture
 import numpy as np
 
@@ -14,7 +13,7 @@ class SDWAAPHD:
         self,
         graph: dict[str, list[str]],
         fovs: dict[str, tuple[np.ndarray, float]],
-        model: StateSpaceModel = CVM(),
+        models: dict[str, StateSpaceModel] = None,
         birth_intensity: GaussianMixture = None,
         survival_probability: float = 1.0,
         detection_probabilities: dict[str, float] | float = 1.0,
@@ -31,7 +30,7 @@ class SDWAAPHD:
         :param graph: The graph of the radar network given by a list of neighbors
             (their ids).
         :param fovs: The field of views of each radar (center and radius).
-        :param model: The state space model.
+        :param models: The state space models for each radar.
         :param birth_intensity: The birth intensity.
         :param survival_probability: The probability of a target's survival.
         :param detection_probabilities: The probabilities of a target's detection for
@@ -47,6 +46,7 @@ class SDWAAPHD:
         """
         self.graph = graph
         self.fovs = fovs
+        self.models = models
         self.radar_ids = list(graph.keys())
         if not isinstance(detection_probabilities, dict):
             detection_probabilities = {
@@ -61,7 +61,7 @@ class SDWAAPHD:
         self.phds = {
             id: SDWAAPHDUnit(
                 fov=fovs[id],
-                model=model,
+                model=models[id],
                 birth_intensity=birth_intensity,
                 survival_probability=survival_probability,
                 detection_probability=detection_probabilities[id],
@@ -82,7 +82,7 @@ class SDWAAPHD:
         new_sdwaaphd = SDWAAPHD(
             graph=self.graph,
             fovs=self.fovs,
-            model=self.phds[self.radar_ids[0]].model,
+            models=self.models,
             birth_intensity=self.phds[self.radar_ids[0]].birth_intensity,
             survival_probability=self.phds[self.radar_ids[0]].survival_probability,
             detection_probabilities={

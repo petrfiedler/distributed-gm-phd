@@ -1,6 +1,5 @@
 from .DiffPHDUnit import DiffPHDUnit
 from .StateSpaceModel import StateSpaceModel
-from .CVM import CVM
 from .GaussianMixture import GaussianMixture
 import numpy as np
 from typing import Literal
@@ -20,7 +19,7 @@ class DiffPHD:
         combine: bool = True,
         combine_strategy: Literal["gci", "mm", "uwaa", "cwaa"] = "gci",
         share_components: bool = True,
-        model: StateSpaceModel = CVM(),
+        models: dict[str, StateSpaceModel] = None,
         birth_intensity: GaussianMixture = None,
         sensor_birth_intensities: dict[str, GaussianMixture] = None,
         survival_probability: float = 1.0,
@@ -43,7 +42,7 @@ class DiffPHD:
         :param combine: Enable the combination step.
         :param combine_strategy: Strategy of merging components in the combine step.
         :param share_components: Share nearby components between radars in the combine step.
-        :param model: The state space model.
+        :param models: The state space models for each radar.
         :param birth_intensity: The birth intensity.
         :param sensor_birth_intensities: The birth intensities for each radar.
         :param survival_probability: The probability of a target's survival.
@@ -64,6 +63,7 @@ class DiffPHD:
         self.share_components = share_components
         self.graph = graph
         self.fovs = fovs
+        self.models = models
         self.radar_ids = list(graph.keys())
         if not isinstance(detection_probabilities, dict):
             detection_probabilities = {
@@ -88,7 +88,7 @@ class DiffPHD:
         self.phds = {
             id: DiffPHDUnit(
                 fov=fovs[id],
-                model=model,
+                model=models[id],
                 birth_intensity=sensor_birth_intensities[id],
                 survival_probability=survival_probability,
                 detection_probability=detection_probabilities[id],
@@ -114,7 +114,7 @@ class DiffPHD:
             combine=self.combine,
             combine_strategy=self.combine_strategy,
             share_components=self.share_components,
-            model=self.phds[self.radar_ids[0]].model,
+            models=self.models,
             birth_intensity=self.phds[self.radar_ids[0]].birth_intensity,
             survival_probability=self.phds[self.radar_ids[0]].survival_probability,
             detection_probabilities={

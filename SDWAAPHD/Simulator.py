@@ -78,11 +78,12 @@ class Simulator:
             radar.id: radar.clutter_intensity_per_unit for radar in radars
         }
         fovs = {radar.id: (radar.center, radar.radius) for radar in radars}
+        models = {radar.id: radar.model for radar in radars}
 
         self.sdwaaphd: SDWAAPHD = SDWAAPHD(
             graph=graph,
             fovs=fovs,
-            model=model,
+            models=models,
             birth_intensity=birth_intensity,
             survival_probability=survival_probability,
             detection_probabilities=detection_probabilities,
@@ -197,6 +198,13 @@ class Simulator:
                         target for target in actual_targets if phd.is_in_fov(target[:2])
                     ]
 
+                    # wider FoV by gospa_c
+                    actual_targets_in_wider_fov = [
+                        target
+                        for target in actual_targets
+                        if phd.is_in_fov(target[:2], extra_radius=gospa_c)
+                    ]
+
                     estimated_targets = phd.estimates.means
 
                     (
@@ -211,6 +219,7 @@ class Simulator:
                         c=gospa_c,
                         alpha=gospa_alpha,
                         p=gospa_p,
+                        targets_false=actual_targets_in_wider_fov,
                     )
 
                     gospa_total_radars.append(gospa_total_radar)

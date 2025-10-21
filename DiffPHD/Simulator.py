@@ -91,6 +91,7 @@ class Simulator:
             radar.id: radar.clutter_intensity_per_unit for radar in radars
         }
         fovs = {radar.id: (radar.center, radar.radius) for radar in radars}
+        models = {radar.id: radar.model for radar in radars}
 
         self.diff_phd: DiffPHD = DiffPHD(
             graph=graph,
@@ -100,7 +101,7 @@ class Simulator:
             combine=combine,
             combine_strategy=combine_strategy,
             share_components=share_components,
-            model=model,
+            models=models,
             birth_intensity=birth_intensity,
             sensor_birth_intensities=sensor_birth_intensities,
             survival_probability=survival_probability,
@@ -124,6 +125,7 @@ class Simulator:
         )
 
         self.animation = None
+        self.current_step = 1
 
     def copy(self):
         """
@@ -167,6 +169,8 @@ class Simulator:
         measurements = self.radar_network.scan()
         self.diff_phd.step(measurements)
 
+        self.current_step += 1
+
     def simulate(
         self,
         steps: int,
@@ -199,6 +203,7 @@ class Simulator:
         if wait_for_birth:
             while not self.radar_network.targets:
                 self.step()
+            self.current_step = 1
 
         gospa_total: list[float] = []
         gospa_localization: list[float] = []
@@ -223,6 +228,13 @@ class Simulator:
                         target for target in actual_targets if phd.is_in_fov(target[:2])
                     ]
 
+                    # wider FoV by gospa_c
+                    actual_targets_in_wider_fov = [
+                        target
+                        for target in actual_targets
+                        if phd.is_in_fov(target[:2], extra_radius=gospa_c)
+                    ]
+
                     estimated_targets = phd.estimates.means
 
                     (
@@ -237,6 +249,7 @@ class Simulator:
                         c=gospa_c,
                         alpha=gospa_alpha,
                         p=gospa_p,
+                        targets_false=actual_targets_in_wider_fov,
                     )
 
                     gospa_total_radars.append(gospa_total_radar)

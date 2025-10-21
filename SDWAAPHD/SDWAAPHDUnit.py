@@ -136,24 +136,7 @@ class SDWAAPHDUnit:
             for i in range(len(prediction))
         ]
 
-        # calculate the detection probability for each predicted component
-        detection_probability = [0] * len(prediction)
-        gate_size_multiplier = self.gate_size
-
-        for j in range(len(prediction)):
-            mean = predicted_measurements[j]
-            cov = innovation_covariances[j]
-
-            cov_eigenvalues = np.linalg.eigvals(cov)
-            max_gate_size = np.sqrt(max(cov_eigenvalues)) * gate_size_multiplier
-
-            if not self.is_in_fov(mean, (self.fov[0], self.fov[1] - max_gate_size)):
-                predictive_mass = self.predictive_mass_in_intersection(
-                    mean, cov, self.fov
-                )
-                detection_probability[j] = predictive_mass * self.detection_probability
-            else:
-                detection_probability[j] = self.detection_probability
+        detection_probability = [self.detection_probability] * len(prediction)
 
         not_detected_intensity = GaussianMixture(
             prediction.means,
@@ -210,7 +193,10 @@ class SDWAAPHDUnit:
         self.uncombined_intensity = self.posterior_intensity
 
     def is_in_fov(
-        self, point: np.ndarray, fov: tuple[np.ndarray, float] = None
+        self,
+        point: np.ndarray,
+        fov: tuple[np.ndarray, float] = None,
+        extra_radius: float = 0,
     ) -> bool:
         """
         Check if a point is in the field of view of the radar.
@@ -220,14 +206,14 @@ class SDWAAPHDUnit:
         """
         if fov is None:
             fov = self.fov
-        return np.linalg.norm(point - fov[0]) <= fov[1]
+        return np.linalg.norm(point - fov[0]) <= fov[1] + extra_radius
 
     def predictive_mass_in_intersection(
         self,
         mean: np.ndarray,
         cov: np.ndarray,
         neighbor_fov: tuple[np.ndarray, float],
-        n_samples: int = 1000,
+        n_samples: int = 500,
     ) -> float:
         """
         Calculate the predictive mass of a gaussian in the intersection of the FoVs.

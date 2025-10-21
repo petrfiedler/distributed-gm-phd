@@ -85,7 +85,7 @@ class DiffPHDUnit:
 
         return new_unit
 
-    def predict(self, intensity=None) -> GaussianMixture:
+    def predict(self, intensity=None, allow_birth=True) -> GaussianMixture:
         """
         Do a PHDF prediction based on the posterior intensity.
 
@@ -109,7 +109,10 @@ class DiffPHDUnit:
 
         existing_prediction = GaussianMixture(new_means, new_covariances, new_weights)
 
-        predicted_intensity = existing_prediction + self.birth_intensity
+        if allow_birth:
+            predicted_intensity = existing_prediction + self.birth_intensity
+        else:
+            predicted_intensity = existing_prediction
 
         return predicted_intensity
 
@@ -142,8 +145,15 @@ class DiffPHDUnit:
 
         # predict and select peripheral components
         if not is_adapt:
+            # merge the peripherals with averaging their weights
+            self.merge_similar_components(
+                self.peripheral_intensity, average_weights=True
+            )
+
             # predict the peripherals
-            predicted_peripheral = self.predict(self.peripheral_intensity)
+            predicted_peripheral = self.predict(
+                self.peripheral_intensity, allow_birth=False
+            )
             # intensity used, empty it
             self.peripheral_intensity = GaussianMixture()
             kept_peripheral = GaussianMixture()
@@ -156,7 +166,7 @@ class DiffPHDUnit:
                 )
                 # find if there is any measurement in gate
                 for measurement in measurements:
-                    distance = mahalanobis(measurement, mean, cov)
+                    distance = mahalanobis(measurement, mean, np.linalg.inv(cov))
                     if distance < self.gate_size:
                         kept_peripheral += predicted_peripheral[i]
                         break
@@ -195,7 +205,7 @@ class DiffPHDUnit:
         gate_size_multiplier = self.gate_size
 
         # if adapting, consider the intersection of the FoVs
-        if is_adapt:
+        if is_adapt and neighbor_fov is not None:
             fov_mean = neighbor_fov[0]
             fov_radius = neighbor_fov[1]
 
@@ -274,7 +284,7 @@ class DiffPHDUnit:
                 cov = innovation_covariances[j]
 
                 # check if in gate
-                distance = mahalanobis(measurement, mean, cov)
+                distance = mahalanobis(measurement, mean, np.linalg.inv(cov))
                 if distance <= self.gate_size:
                     had_measurement_in_gate[j] = True
                 else:
@@ -317,7 +327,10 @@ class DiffPHDUnit:
         self.uncombined_intensity = self.posterior_intensity
 
     def is_in_fov(
-        self, point: np.ndarray, fov: tuple[np.ndarray, float] = None
+        self,
+        point: np.ndarray,
+        fov: tuple[np.ndarray, float] = None,
+        extra_radius: float = 0,
     ) -> bool:
         """
         Check if a point is in the field of view of the radar.
@@ -327,32 +340,42 @@ class DiffPHDUnit:
         """
         if fov is None:
             fov = self.fov
-        return np.linalg.norm(point - fov[0]) <= fov[1]
+        return np.linalg.norm(point - fov[0]) <= fov[1] + extra_radius
 
     def predictive_mass_in_intersection(
         self,
         mean: np.ndarray,
         cov: np.ndarray,
-        neighbor_fov: tuple[np.ndarray, float],
-        n_samples: int = 1000,
+        neighbor_fov: tuple[np.ndarray, float] = None,
+        n_samples: int = 500,
     ) -> float:
         """
-        Calculate the predictive mass of a gaussian in the intersection of the FoVs.
+        Calculate the predictive mass of a gaussian in the intersection of the FoVs,
+        or just in this radar's FoV if neighbor_fov is None.
 
         :param mean: The mean of the gaussian.
         :param cov: The covariance of the gaussian.
-        :param neighbor_fov: The field of view of the neighboring radar.
+        :param neighbor_fov: The field of view of the neighboring radar. If None,
+                            calculates mass only in this radar's FoV.
         :param n_samples: The number of samples to use in the Monte Carlo estimation.
         """
         # Monte Carlo: sample n points from the gaussian and check if they are in the
-        # intersection
-        n_inside = 0
+        # intersection (or just own FoV) using vectorized operations
         samples = np.random.multivariate_normal(mean, cov, n_samples)
-        for sample in samples:
-            if self.is_in_fov(sample) and self.is_in_fov(sample, neighbor_fov):
-                n_inside += 1
 
-        return n_inside / n_samples
+        own_fov_center, own_fov_radius = self.fov
+
+        own_distances_sq = np.sum((samples - own_fov_center) ** 2, axis=1)
+        in_own_fov = own_distances_sq <= own_fov_radius**2
+
+        if neighbor_fov is None:
+            return float(np.mean(in_own_fov))
+        else:
+            neighbor_fov_center, neighbor_fov_radius = neighbor_fov
+            neighbor_distances_sq = np.sum((samples - neighbor_fov_center) ** 2, axis=1)
+            in_neighbor_fov = neighbor_distances_sq <= neighbor_fov_radius**2
+            in_intersection = in_own_fov & in_neighbor_fov
+            return float(np.mean(in_intersection))
 
     def prune(self):
         """
@@ -376,12 +399,14 @@ class DiffPHDUnit:
         # keep only the max_gaussians most weighted components
         self.posterior_intensity = self.posterior_intensity.top_k(self.max_gaussians)
 
-    def merge_similar_components(self):
+    def merge_similar_components(
+        self, intensity: GaussianMixture = None, average_weights=False
+    ):
         """
         Merge similar components in the posterior intensity.
         """
         merged = GaussianMixture()
-        not_merged = self.posterior_intensity
+        not_merged = self.posterior_intensity if intensity is None else intensity
 
         while len(not_merged) > 0:
             # find the most weighted component
@@ -404,6 +429,8 @@ class DiffPHDUnit:
             merged_weight = sum(
                 component.weights[0] for component in components_to_merge
             )
+            if average_weights:
+                merged_weight /= len(components_to_merge)
 
             merged_mean = (
                 sum(
@@ -624,7 +651,9 @@ class DiffPHDUnit:
                     mean,
                     (self.fov[0], self.fov[1] + max_gate_size),
                 ):
-                    self.peripheral_intensity += neighbor_intensity
+                    self.peripheral_intensity += neighbor_intensity[i]
+
+        self.prune()
 
     def get_estimates(self):
         """
