@@ -43,24 +43,3 @@ pip install numpy matplotlib scipy jupyter
    jupyter notebook example.ipynb
    ```
 3. Run the cells to reproduce the specific findings from the paper.
-
-## Citation
-
-If our work helps your research, please cite our paper:
-
-```bibtex
-@article{fiedler2026self,
-  author={Fiedler, Petr and Dedecius, Kamil},
-  journal={IEEE Signal Processing Letters}, 
-  title={Self-Referencing Adapt-Then-Combine Information Diffusion Scheme for Distributed PHD Filtering}, 
-  year={2026},
-  volume={33},
-  number={},
-  pages={251},
-  doi={10.1109/LSP.2025.3642058}
-}
-```
-
-## License
-
-This source code is provided under an open-source license. *(Consider adding a specific LICENSE file, such as MIT)*
